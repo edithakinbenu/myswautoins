@@ -1,0 +1,378 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## Nomor 1 ##
+1.) Briefly discuss the data found (e.g., how many tariff cells, how many rating factors,
+what are the levels for each, how is the exposure determined).
+
+# jawaban
+Data yang dimiliki mempunyai 4 rating factor, yaitu Bonus dengan 7 level, Zone dengan 7 level, Kilometres dengan 5 level dan Make dengan 7 level. Oleh karena itu dapat disimpulkan bahwa terdapat 7 x 7 x 5 x 7 = 1715 tariff cell. Selain itu, exposure yang akan digunakan dalam analisa ini adalah Insured untuk frequency, dan Claims untuk severity
+
+a. Tariff Cells            : 1703 ---> (5*7*7*7)
+b. Rating Factors          : 4 (Bonus, Zone, Kilometres, Make)
+c. Level 
+    - Kilometers    : 5
+    - Zone          : 7
+    - Bonus         : 7
+    - Make          : 7
+
+```{r}
+# input data
+data = myswautoins
+data
+```
+
+```{r}
+# mengubah menjadi variabel kategorik
+data = within(myswautoins, {
+  Bonus = factor(Bonus)
+  Zone = factor(Zone)
+  Kilometres = factor(Kilometres)
+  Make = factor(Make)
+})
+# memanggil data baru
+data
+summary(data)
+
+# jumlah tariff cell 
+7*5*7*7
+```
+
+
+## NOMOR 2 ##
+We first focus on the frequency component of the tariff model. An insurer’s current
+tariff uses the categorical variables Kilometres, Zone, Bonus and Make as predictors.
+Using a relative Poisson glm (with a base tariff cell set as the tariff cell with the largest
+exposure as measured by the variable Insured), produce a table with the relativity for
+each predictor in the model, as well as a 95% confidence interval for each relativity.
+Comment on the significance of each predictor in the model. Also, using the deviance
+statistic, discuss the overall fit of this model to the data
+
+# jawaban
+
+```{r}
+# membuat tariff base cell
+print(basecell<- data[which.max(data[,6]),2:5])
+print(data$Kilometres<- relevel(data$Kilometres, as.character(basecell$Kilometres)))
+print(data$Zone<- relevel(data$Zone, as.character(basecell$Zone)))
+print(data$Bonus<- relevel(data$Bonus, as.character(basecell$Bonus)))
+print(data$Make<- relevel(data$Make, as.character(basecell$Make)))
+data
+```
+
+```{r}
+# fit glm poisson
+# masih bingung kapan menggunakan offset kapan engga
+summary(freq<-glm(Claims ~ Kilometres + Zone + Bonus + Make + offset(log(Insured)), data = data[data$Insured>0,], family=poisson("log")))
+```
+```{r}
+# relativity
+cbind("relativity" = exp(freq$coefficients),
+                  "minimum CI" = exp(freq$coefficients)-(1.96)*sqrt(diag(vcov(freq))),
+                  "maksimum CI" = exp(freq$coefficients)+(1.96)*sqrt(diag(vcov(freq))))
+
+# Deviance statistic
+cbind(scaled.deviance = freq$deviance, df = freq$df.residual, p = 1-pchisq(freq$deviance, freq$df.residual)) # p=0 mungkin overfitting
+```
+
+
+## NOMOR 3 ##
+Your manager claims that the following set of tariff cells should be handled in aseparate manner:
+1. Set 1: all tariff cells with a (bonus rating of 5 or less) or (a zone of 4 or less)
+2. Set 2: all other tariff cells
+Using the deviance statistic, comment on the overall fit of the relative Poisson model
+for each setof tariff cells. What do you observe? For which set of tariff cells does the
+relative Poisson modelis more appropriate. Justify your answer.
+
+#Jawaban
+
+```{r}
+set1 <- myswautoins[(myswautoins$Zone<=4) | (myswautoins$Bonus<=5),]
+set1
+```
+
+```{r}
+set1 <- within(set1, {
+    Kilometres  <- factor(Kilometres)
+    Zone        <- factor(Zone)
+    Bonus       <- factor(Bonus)
+    Make        <- factor(Make)
+})
+summary(set1)
+
+```
+
+```{r}
+##Relevel set 1 agar base cell nya menjadi tariff cell dengann nilai exposure tertinggi, dalam hal ini adalah tariff cell dengan insured tertinggi.
+print(basecell.set1<- set1[which.max(set1[,6]),2:5])
+print(set1$Kilometres <- relevel(set1$Kilometres, as.character(basecell.set1$Kilometres)))
+print(set1$Zone <- relevel(set1$Zone, as.character(basecell.set1$Zone)))
+print(set1$Bonus <- relevel(set1$Bonus, as.character(basecell.set1$Bonus)))
+print(set1$Make <- relevel(set1$Make, as.character(basecell.set1$Make)))
+```
+
+```{r}
+#Poisson Frequency Model
+#Fit relative Poisson glm (with phi=1) for nb of claims that uses an offset
+summary(freq.set1<-glm(Claims ~ Kilometres + Zone + Bonus + Make + offset(log(Insured)), data = set1[set1$Insured>0,], family=poisson("log")))
+```
+
+## Deviance
+# Frequency model: fit of the relative Poisson model
+# Use the residual deviance statistic
+# This computes the p-value corresponding to the residual deviance provided in R
+```{r}
+dev.set1= cbind(scaled.deviance=freq.set1$deviance, df=freq.set1$df.residual, p=1-pchisq(freq.set1$deviance, freq.set1$df.residual))
+data.frame(dev.set1)
+```
+
+```{r}
+qchisq(0.95,196)
+```
+
+```{r}
+cbind("relativity" = exp(freq.set1$coefficients),
+                  "minimum CI" = exp(freq.set1$coefficients)-(1.96)*sqrt(diag(vcov(freq.set1))),
+                  "maksimum CI" = exp(freq.set1$coefficients)+(1.96)*sqrt(diag(vcov(freq.set1))))
+
+```
+
+
+```{r}
+#dilakukan hal yang sama untuk set2
+set2 <- myswautoins[(myswautoins$Zone>4) & (myswautoins$Bonus>5),]
+set2
+```
+
+```{r}
+set2 <- within(set2, {
+    Kilometres  <- factor(Kilometres)
+    Zone        <- factor(Zone)
+    Bonus       <- factor(Bonus)
+    Make        <- factor(Make)
+})
+summary(set2)
+```
+
+
+
+#Relevel set 2 agar base cell nya menjadi tariff cell dengann nilai exposure tertinggi, dalam hal ini adalah tariff cell dengan insured tertinggi.
+```{r}
+print(basecell.set2<- set2[which.max(set2[,6]),2:5])
+print(set2$Kilometres<- relevel(set2$Kilometres, as.character(basecell.set2$Kilometres)))
+print(set2$Zone<- relevel(set2$Zone, as.character(basecell.set2$Zone)))
+print(set2$Bonus<- relevel(set2$Bonus, as.character(basecell.set2$Bonus)))
+print(set2$Make<- relevel(set2$Make, as.character(basecell$Make)))
+```
+
+#Poisson Frequency Model
+#Fit relative Poisson glm (with phi=1) for nb of claims that uses an offset
+```{r}
+summary(freq.set2<-glm(Claims ~ Kilometres + Zone + Bonus + Make + offset(log(Insured)), data = set2[set2$Insured>0,], family=poisson("log")))
+```
+## Deviance
+# Frequency model: fit of the relative Poisson model
+# Use the residual deviance statistic
+# This computes the p-value corresponding to the residual deviance provided in R
+```{r}
+dev.set2 = cbind(scaled.deviance=freq.set2$deviance, df=freq.set2$df.residual, p=1-pchisq(freq.set2$deviance, freq.set2$df.residual))
+data.frame(dev.set2)
+```
+```{r}
+qchisq(0.95,682)
+```
+```{r}
+cbind("relativity" = exp(freq.set2$coefficients),
+                  "minimum CI" = exp(freq.set2$coefficients)-(1.96)*sqrt(diag(vcov(freq.set2))),
+                  "maksimum CI" = exp(freq.set2$coefficients)+(1.96)*sqrt(diag(vcov(freq.set2))))
+```
+
+#membandingkan set 1 dan set 2
+```{r}
+data.frame("Model" = c("Set 1", "Set 2"),
+           "Scaled Deviance" = c(dev.set1[1,1],dev.set2[1,1]),
+           "df" = c(dev.set1[1,2],dev.set2[1,2]),
+           "p-value" = c(dev.set1[1,3],dev.set2[1,3])
+           )
+```
+
+
+## NOMOR 4 ##
+For the rest of the project, you are asked to only consider the tariff cells in Set
+2 (as defined in Q3). You are told to set the tariff cell with the largest exposure
+(as measured by the variable Insured) as the base tariff cell in Set 2). First, you
+are asked to determine (using a likelihood ratio test) whether you are statistically
+justified to altogether drop the categorical variable Make from the relative Poisson
+glm for the frequency in Q3. Justify your answer.
+
+#jawaban
+H0 : Model fitted (variabel sederhana)
+H1 : Model saturated (variabel full)
+
+
+```{r}
+# fit GLM untuk set 2 tanpa Make
+summary(freq.set2.no4<-glm(Claims ~ Kilometres + Zone + Bonus + offset(log(Insured)), data = set2[set2$Insured>0,], family=poisson("log")))
+
+# Likelihood Ratio Test
+anova(freq.set2.no4, freq.set2)
+
+# with p-value for the test of
+1-pchisq(anova(freq.set2.no4, freq.set2)[2,]$Deviance,anova(freq.set2.no4, freq.set2)[2,]$Df)
+```
+```
+
+## NOMOR 5 ##
+Alternatively to Q4, your manager has requested that you handle the categorical variable Make as follows:
+1. merge Category 2 and 5 of Make
+2. merge category 1, 3 and 7 of Make
+3. leave everything else as is (including the other predictors in the model)
+Use a likelihood ratio test to show if you are statistically justified to model the variable Make as suggested by your manager. Produce a table with the relativities for each predictor in the model,as well as a 95% confidence interval for each relativity.
+
+
+#Jawaban
+```{r}
+#install package
+library(dplyr)
+
+#memanggil data yang akan digunakan
+set2.no5 = set2
+```
+
+```{r}
+# Membuat base cell dengan exposure tertinggi
+print(basecell.set2.no5<- set2.no5[which.max(set2.no5[,6]),2:5])
+print(set2.no5$Kilometres<- relevel(set2$Kilometres, as.character(basecell.set2.no5$Kilometres)))
+print(set2.no5$Zone<- relevel(set2.no5$Zone, as.character(basecell.set2.no5$Zone)))
+print(set2.no5$Bonus<- relevel(set2.no5$Bonus, as.character(basecell.set2.no5$Bonus)))
+print(set2.no5$Make<- relevel(set2.no5$Make, as.character(basecell.set2.no5$Make)))
+set2.no5
+```
+
+```{r}
+# merge category 2 and 5 of Make
+levels(set2.no5$Make)<-recode(levels(set2.no5$Make), "2"="A")
+levels(set2.no5$Make)<-recode(levels(set2.no5$Make), "5"="A")
+
+
+# merge category 1,3,7 of Make
+levels(set2.no5$Make)<-recode(levels(set2.no5$Make), "1"="B")
+levels(set2.no5$Make)<-recode(levels(set2.no5$Make), "3"="B")
+levels(set2.no5$Make)<-recode(levels(set2.no5$Make), "7"="B")
+```
+
+```{r}
+summary(freq.set2.no5<-glm(Claims ~ Kilometres + Zone + Bonus + Make + offset(log(Insured)), data = set2.no5[set2.no5$Insured>0,], family=poisson("log")))
+```
+
+```{r}
+# Relativity table
+cbind("Estimator" = exp(freq.set2.no5$coefficients),
+      "Minimum CI" = exp((freq.set2.no5$coefficients)-(1.96)*sqrt(diag(vcov(freq.set2.no5)))),
+      "Maksimum CI" = exp((freq.set2.no5$coefficients)-(1.96)*sqrt(diag(vcov(freq.set2.no5)))))
+```
+
+## NOMOR 6 ##
+We now turn our attention to the severity model. For only the tariff cells in Set 2(with the same base tariff cell as set in Q4), fit a Gamma glm (with log link function) using all four categorical variables. Comment on the significance of each predictor in the model. Also,using the deviance statistic, discuss the overall fit of this model to the data.
+#Jawaban
+
+```{r}
+set2
+head(set2)
+```
+
+```{r}
+severity <- set2$Payment/set2$Claims
+set2.no6 = data.frame(set2,severity)
+head(set2.no6)
+```
+
+
+```{r}
+# fit Gamma GLM
+summary(sev.no6 <- glm(severity ~ Kilometres + Zone + Bonus + Make,
+              data = set2.no6[set2.no6$Claims>0, ],
+              family = Gamma("log"),
+              weights = Claims))
+```
+
+
+
+```{r}
+# Deviance statistic
+dev.sev.no6 = cbind(scaled.deviance = sev.no6$deviance,
+                 df = sev.no6$df.residual,
+                 p = 1-pchisq(sev.no6$deviance, sev.no6$df.residual)) 
+data.frame(dev.sev.no6)
+```
+
+## NOMOR 7 ##
+Your manager has done a comprehensive analysis of the severity model (including the model you got in Q6) and suggested the use of a gamma glm with the following simplifications on the categorical variables:
+1. Zone: group all Zone except Zone 5 into one category
+2. Make : group all Make except Make 5 into one category
+3. Bonus and Kilometres: drop both of these categorical variables
+Find the relativities of the proposed model including a 95% confidence interval for each relativity. Using a likelihood ratio test, show that you are statistically justified to adopt your manager’s proposed model over the more complicated gamma glm you considered in Q6
+
+#Jawaban
+
+```{r}
+set2_no7 = na.omit(myswautoins[(myswautoins$Bonus>5)&(myswautoins$Zone>4),])
+set2_no7$Make[set2_no7$Make != 5] = 7
+set2_no7$Zone[set2_no7$Zone != 5] = 6
+
+set2_no7 = within(set2_no7, {
+  Kilometres = factor(Kilometres)
+  Zone = factor(Zone)
+  Bonus = factor(Bonus)
+  Make = factor(Make)
+})
+summary(set2_no7)
+set2_no7
+
+# base cell
+base.set2_no7 = set2_no7[which.max(set2_no7[,6]),2:5]
+print(base.set2_no7)
+set2_no7$Make = relevel(set2_no7$Make, as.character(base.set2_no7$Make))
+set2_no7$Zone = relevel(set2_no7$Zone, as.character(base.set2_no7$Zone))
+
+# fit Gamma GLM
+sev.no7 = glm(Payment/Claims ~ Zone + Make,
+              data = set2_no7[set2_no7$Claims>0, ],
+              family = Gamma("log"),
+              weights = Claims)
+summary(sev.no7)
+
+# Relativity Table
+data.frame(cbind("Estimator" = exp(sev.no7$coefficients),
+      "Minimum CI" = exp((sev.no7$coefficients)-(1.96)*sqrt(diag(vcov(sev.no7)))),
+      "Maksimum CI" = exp((sev.no7$coefficients)-(1.96)*sqrt(diag(vcov(sev.no7))))))
+```
+
+
+## NOMOR 8 ##
+Assume that the decision was made to use
+• the relative Poisson glm of Q5 for the frequency model
+• the gamma glm of Q7 for the severity model
+Find the expected pure premium (for a coverage of a full policy year) of a policy with Kilometres=4,Zone=7, Bonus=7 and Make=5.
+
+```{r}
+# pure premium = severity x frequency
+# frequency
+summary(freq.set2.no5)
+# severity
+summary(sev.no7)
+
+# FINAL RESULT
+# kilometres=4, zone=7, bonus=7, make=5
+final.freq = exp(-2.49041 + 0.31687)
+final.sev = exp(15.39433 - 3.08868)
+
+data.frame(cbind("frequency" = final.freq,
+      "severity" = final.sev,
+      "pure premium" = final.freq*final.sev))
+```
+
+
+
